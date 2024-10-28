@@ -17,6 +17,8 @@
 
 ---
 
+
+
 # EJERCICIO 3.1: Cálculo de Histograma en Paralelo usando MPI
 
 ## Descripción del Problema
@@ -28,169 +30,116 @@ Este ejercicio aborda el cálculo de un histograma en paralelo utilizando la bib
 ### 1. Inclusión de Bibliotecas y Definición de Constantes
 
 ```cpp
-- #include <mpi.h>
-- #include <iostream>
-- #include <vector>
-- #define CANTIDAD_CATEGORIAS 5
+#include <mpi.h>
+#include <iostream>
+#define BIN_COUNT 5
 ```
 
 - `#include <mpi.h>`: Incluye la biblioteca de MPI, que permite la comunicación entre procesos en paralelo.
 - `#include <iostream>`: Biblioteca estándar de C++ para entrada y salida de datos.
-- `#include <vector>`: Biblioteca estándar de C++ para el uso de vectores, que en este caso almacena los datos numéricos.
-- `#define CANTIDAD_CATEGORIAS 5`: Define el número de categorías para el histograma. Esto permite clasificar los datos en cinco rangos.
+- `#define BIN_COUNT 5`: Define el número de bins (categorías) para el histograma. Esto permite clasificar los datos en cinco rangos.
 
-### 2. Estructura `RangoCategorias`
-
-```cpp
-struct RangoCategorias {
-    double limite_inferior;
-    double limite_superior;
-    double tamano_intervalo;
-};
-```
-
-Esta estructura `RangoCategorias` define los parámetros que caracterizan cada categoría del histograma:
-- `limite_inferior`: Límite inferior del rango de datos.
-- `limite_superior`: Límite superior del rango.
-- `tamano_intervalo`: Tamaño del intervalo de cada categoría, calculado automáticamente.
-
-### 3. Función `inicializar_rangos`
+### 2. Función `find_bin`
 
 ```cpp
-RangoCategorias inicializar_rangos(double limite_inferior, double limite_superior, int cantidad_categorias) {
-    RangoCategorias rango;
-    rango.limite_inferior = limite_inferior;
-    rango.limite_superior = limite_superior;
-    rango.tamano_intervalo = (limite_superior - limite_inferior) / cantidad_categorias;
-    return rango;
-}
-```
-
-**Descripción**: Esta función inicializa los rangos de las categorías en el histograma.
-- **Parámetros**:
-  - `limite_inferior` y `limite_superior`: Los límites del rango de datos.
-  - `cantidad_categorias`: Número de categorías en el histograma.
-- **Cálculo del Intervalo**: Calcula el tamaño de cada categoría dividiendo el rango total entre el número de categorías.
-- **Retorno**: Devuelve una estructura `RangoCategorias` con estos valores, lista para clasificar datos.
-
-### 4. Función `asignar_categoria`
-
-```cpp
-int asignar_categoria(double valor, const RangoCategorias& rango) {
-    int indice_categoria = (int)((valor - rango.limite_inferior) / rango.tamano_intervalo);
-    if (indice_categoria >= CANTIDAD_CATEGORIAS) {
-        indice_categoria = CANTIDAD_CATEGORIAS - 1;
+int find_bin(double value, double min, double bin_size) {
+    int bin_index = (int)((value - min) / bin_size);
+    if (bin_index >= BIN_COUNT) {
+        bin_index = BIN_COUNT - 1;
     }
-    return indice_categoria;
+    return bin_index;
 }
 ```
 
-**Descripción**: Esta función asigna un valor a una categoría específica en el histograma.
-- **Parámetros**: 
-  - `valor`: Dato a clasificar.
-  - `rango`: Estructura `RangoCategorias` con los límites y tamaño de intervalos.
-- **Cálculo de Categoría**: Calcula el índice de la categoría dividiendo la diferencia entre el valor y el límite inferior por el tamaño del intervalo.
-- **Ajuste de Categoría**: Si el índice calculado es mayor o igual que el número de categorías (`CANTIDAD_CATEGORIAS`), se ajusta al último índice para evitar errores de rango.
-- **Retorno**: Devuelve el índice de la categoría correspondiente.
-
-### 5. Función `procesar_datos_locales`
-
-```cpp
-void procesar_datos_locales(const vector<double>& datos_locales, int* histograma_local, const RangoCategorias& rango) {
-    for (double valor : datos_locales) {
-        int categoria = asignar_categoria(valor, rango);
-        histograma_local[categoria]++;
-    }
-}
-```
-
-**Descripción**: Esta función procesa los datos locales (asignados a cada proceso) y genera un histograma parcial.
+**Descripción**: Esta función calcula el índice del bin correspondiente a un valor dado.
 - **Parámetros**:
-  - `datos_locales`: Vector de datos que el proceso actual tiene asignado.
-  - `histograma_local`: Array para almacenar la cuenta de datos en cada categoría.
-  - `rango`: Estructura `RangoCategorias` que contiene la información de límites e intervalos.
-- **Proceso**: 
-  - Itera sobre cada valor en `datos_locales`, determina su categoría con `asignar_categoria`, y aumenta el contador de esa categoría en `histograma_local`.
+  - `value`: El dato a clasificar.
+  - `min`: El límite inferior del rango de datos.
+  - `bin_size`: El tamaño de cada bin.
+- **Cálculo del Índice**: Calcula el índice del bin restando el mínimo del valor y dividiendo por el tamaño del bin.
+- **Ajuste del Índice**: Si el índice calculado excede el número de bins, se ajusta al último índice.
 
-### 6. Función `imprimir_histograma`
-
-```cpp
-void imprimir_histograma(const int* histograma_global) {
-    cout << "Resultado del Histograma:" << endl;
-    for (int i = 0; i < CANTIDAD_CATEGORIAS; i++) {
-        cout << "Categoria " << i << ": " << histograma_global[i] << endl;
-    }
-}
-```
-
-**Descripción**: Imprime el histograma global final.
-- **Parámetros**:
-  - `histograma_global`: Array que contiene la cuenta total de cada categoría.
-- **Proceso**: 
-  - Itera sobre cada categoría y muestra la cantidad de elementos en cada una.
-
-### 7. Función `main`
+### 3. Función `main`
 
 ```cpp
 int main(int argc, char* argv[]) {
-    double conjunto_datos[] = {1.3, 2.9, 0.4, 0.3, 1.3, 4.4, 1.7, 0.4, 3.2, 0.3, 4.9, 2.4, 3.1, 4.4, 3.9, 0.4, 4.2, 4.5, 4.9, 0.9};
-    int cantidad_datos = 20;
-    int histograma_local[CANTIDAD_CATEGORIAS] = {0};
-    int histograma_global[CANTIDAD_CATEGORIAS] = {0};
+    int local_hist[BIN_COUNT] = {0};
+    int global_hist[BIN_COUNT] = {0};
+    double min = 0.0, max = 5.0;
+    double bin_size = (max - min) / BIN_COUNT;
+
+    double data[] = {1.3, 2.9, 0.4, 0.3, 1.3, 4.4, 1.7, 0.4, 3.2, 0.3, 4.9, 2.4, 3.1, 4.4, 3.9, 0.4, 4.2, 4.5, 4.9, 0.9};
+    int data_count = 20;
 
     MPI_Init(&argc, &argv);
-    int tamano_mundo, rango_mundo;
-    MPI_Comm_size(MPI_COMM_WORLD, &tamano_mundo);
-    MPI_Comm_rank(MPI_COMM_WORLD, &rango_mundo);
+    int world_size;
+    MPI_Comm_size(MPI_COMM_WORLD, &world_size);
+    int world_rank;
+    MPI_Comm_rank(MPI_COMM_WORLD, &world_rank);
 
-    RangoCategorias rango = inicializar_rangos(0.0, 5.0, CANTIDAD_CATEGORIAS);
+    int local_data_size = data_count / world_size;
+    double* local_data = new double[local_data_size];
 
-    int cantidad_datos_local = cantidad_datos / tamano_mundo;
-    vector<double> datos_locales(conjunto_datos + rango_mundo * cantidad_datos_local,
-                                 conjunto_datos + (rango_mundo + 1) * cantidad_datos_local);
+    MPI_Scatter(data, local_data_size, MPI_DOUBLE, local_data, local_data_size, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+```
 
-    procesar_datos_locales(datos_locales, histograma_local, rango);
+**Descripción**:
+1. **Inicialización de Histogramas**: Se definen los histogramas locales y globales.
+2. **Definición de Parámetros**: Se establecen los límites y el tamaño de los bins.
+3. **Datos de Entrada**: Se definen los datos a procesar.
+4. **Inicialización de MPI**: Se inicia el entorno MPI y se obtiene el número total de procesos y el rango de cada uno.
+5. **Distribución de Datos**: Se distribuyen los datos a los procesos utilizando `MPI_Scatter`.
 
-    MPI_Reduce(histograma_local, histograma_global, CANTIDAD_CATEGORIAS, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
+### 4. Cálculo del Histograma Local
 
-    if (rango_mundo == 0) {
-        imprimir_histograma(histograma_global);
+```cpp
+    for (int i = 0; i < local_data_size; i++) {
+        int bin = find_bin(local_data[i], min, bin_size);
+        local_hist[bin]++;
     }
+```
 
+**Descripción**: Cada proceso calcula su histograma local iterando sobre sus datos asignados y utilizando la función `find_bin` para determinar a qué bin pertenece cada valor. Luego incrementa el contador correspondiente en `local_hist`.
+
+### 5. Reducción de Resultados
+
+```cpp
+    MPI_Reduce(local_hist, global_hist, BIN_COUNT, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
+```
+
+**Descripción**: Se combinan los histogramas locales en un único histograma global utilizando `MPI_Reduce`, sumando los valores de todos los procesos en el proceso raíz.
+
+### 6. Impresión del Histograma Global
+
+```cpp
+    if (world_rank == 0) {
+        cout << "Histograma:" << endl;
+        for (int i = 0; i < BIN_COUNT; i++) {
+            cout << "Bin " << i << ": " << global_hist[i] << endl;
+        }
+    }
+```
+
+**Descripción**: Solo el proceso con `world_rank == 0` imprime el histograma global, mostrando cuántos valores cayeron en cada bin.
+
+### 7. Finalización
+
+```cpp
+    delete[] local_data;
     MPI_Finalize();
     return 0;
 }
 ```
 
-**Explicación**:
+**Descripción**: Se libera la memoria asignada para `local_data` y se finaliza MPI, cerrando el entorno de comunicación.
 
-1. **Inicialización**:
-   - `MPI_Init`: Inicializa el entorno MPI.
-   - `MPI_Comm_size` y `MPI_Comm_rank`: Determinan el tamaño total de procesos (`tamano_mundo`) y el rango o identificador del proceso actual (`rango_mundo`).
+### Resultados Esperados
 
-2. **Datos y Parámetros**:
-   - `conjunto_datos`: Array de datos a procesar (20 elementos).
-   - `cantidad_datos`: Número total de datos.
-   - `histograma_local` y `histograma_global`: Arrays para almacenar los resultados locales y globales del histograma.
+Al ejecutar el programa, se espera obtener un histograma que representa la distribución de los valores en el rango definido (0.0 a 5.0) en 5 bins. El resultado se imprime en la consola del proceso raíz.
 
-3. **Inicialización de Rangos**:
-   - `inicializar_rangos(0.0, 5.0, CANTIDAD_CATEGORIAS)`: Configura el rango para el histograma entre 0 y 5, con cinco categorías.
+### Conclusión
 
-4. **Distribución de Datos**:
-   - Cada proceso obtiene una porción del `conjunto_datos` según su identificador `rango_mundo`.
-
-5. **Cálculo del Histograma Local**:
-   - `procesar_datos_locales` genera el histograma parcial para los datos asignados al proceso actual.
-
-6. **Reducción de Resultados**:
-   - `MPI_Reduce`: Combina todos los `histograma_local` en el `histograma_global` en el proceso raíz.
-
-7. **Impresión del Histograma Global**:
-   - Si `rango_mundo` es 0, se llama a `imprimir_histograma` para mostrar el resultado final.
-
-8. **Finalización**:
-   - `MPI_Finalize`: Cierra el entorno MPI.
-
+Este código es un ejemplo efectivo de cómo utilizar MPI para paralelizar el cálculo de un histograma. Permite la distribución de datos y la reducción de resultados en un entorno de computación distribuida, lo que es fundamental para el procesamiento eficiente de grandes conjuntos de datos. Si necesitas más detalles o modificaciones en el código, ¡no dudes en preguntar!
 
 9. **Resultados**:
 ![ Ejecución](1.png)
